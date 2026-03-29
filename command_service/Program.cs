@@ -7,6 +7,11 @@ using Microsoft.AspNetCore.SignalR;
 
 var builder = WebApplication.CreateBuilder(args);
 
+if (OperatingSystem.IsWindows())
+{
+	builder.Host.UseWindowsService();
+}
+
 builder.Services.AddSignalR();
 builder.Services.AddSingleton<InMemoryStateStore>();
 
@@ -21,19 +26,33 @@ app.MapPost("/api/pair/start-code", (StartCodeRequest request, InMemoryStateStor
 		return Results.BadRequest(new { error = "laptop_id_required" });
 	}
 
-	var code = RandomNumberGenerator.GetInt32(0, 10000).ToString("D4");
-	var expiresAt = DateTimeOffset.UtcNow.AddSeconds(90);
+	var now = DateTimeOffset.UtcNow;
+	var normalizedLaptopId = request.LaptopId.Trim();
 
-	store.Write(s =>
+	var response = store.Read(s =>
 	{
-		s.ActiveLaptopId = request.LaptopId.Trim();
+		if (string.Equals(s.ActiveLaptopId, normalizedLaptopId, StringComparison.Ordinal) &&
+			!string.IsNullOrWhiteSpace(s.CurrentPairingCodePlain) &&
+			s.PairingCodeExpiryUtc.HasValue &&
+			now < s.PairingCodeExpiryUtc.Value)
+		{
+			return new StartCodeResponse(s.CurrentPairingCodePlain!, s.PairingCodeExpiryUtc.Value);
+		}
+
+		var code = RandomNumberGenerator.GetInt32(0, 10000).ToString("D4");
+		var expiresAt = now.AddSeconds(90);
+
+		s.ActiveLaptopId = normalizedLaptopId;
+		s.CurrentPairingCodePlain = code;
 		s.CurrentPairingCodeHash = HashValue(code);
 		s.PairingCodeExpiryUtc = expiresAt;
 		s.FailedCodeAttempts = 0;
 		s.PairingCooldownUntilUtc = null;
+
+		return new StartCodeResponse(code, expiresAt);
 	});
 
-	return Results.Ok(new StartCodeResponse(code, expiresAt));
+	return Results.Ok(response);
 });
 
 app.MapPost("/api/pair/confirm", (PairRequest request, InMemoryStateStore store) =>
@@ -138,6 +157,9 @@ app.MapPost("/api/commands/lock", (PowerCommandRequest request, InMemoryStateSto
 
 app.MapPost("/api/commands/sleep", (PowerCommandRequest request, InMemoryStateStore store, IHubContext<AgentHub> hub, CancellationToken cancellationToken) =>
 	DispatchPowerCommand(request, CommandType.Sleep, store, hub, cancellationToken));
+
+app.MapPost("/api/commands/shutdown", (PowerCommandRequest request, InMemoryStateStore store, IHubContext<AgentHub> hub, CancellationToken cancellationToken) =>
+	DispatchPowerCommand(request, CommandType.Shutdown, store, hub, cancellationToken));
 
 app.MapHub<AgentHub>("/hubs/agent");
 

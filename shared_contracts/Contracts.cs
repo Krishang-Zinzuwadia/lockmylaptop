@@ -3,7 +3,8 @@ namespace LockMyLaptop.SharedContracts;
 public enum CommandType
 {
     LockWorkstation = 1,
-    Sleep = 2
+    Sleep = 2,
+    Shutdown = 3
 }
 
 public sealed record DispatchCommandMessage(

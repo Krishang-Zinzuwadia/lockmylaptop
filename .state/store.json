@@ -1,0 +1,12 @@
+{
+  "ActiveLaptopId": "laptop-local-001",
+  "ActiveMobileDeviceId": null,
+  "ActivePairTokenHash": null,
+  "PairExpiryUtc": null,
+  "CurrentPairingCodePlain": null,
+  "CurrentPairingCodeHash": null,
+  "PairingCodeExpiryUtc": null,
+  "FailedCodeAttempts": 0,
+  "PairingCooldownUntilUtc": null,
+  "LastCommandAtUtc": null
+}
