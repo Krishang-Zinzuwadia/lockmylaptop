@@ -12,3 +12,15 @@ Android-first remote laptop control app for Windows.
 - Monorepo development on branch `dev`.
 - Work is delivered phase-by-phase.
 - Each phase is committed and pushed before moving to the next phase.
+
+## Repository Structure
+- mobile_android/
+- command_service/
+- laptop_agent/
+- shared_contracts/
+- tests/
+- docs/
+
+## Local Prerequisites
+- .NET 8 SDK
+- Flutter SDK with Android toolchain
