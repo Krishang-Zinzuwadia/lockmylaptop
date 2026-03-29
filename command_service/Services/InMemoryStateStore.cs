@@ -1,8 +1,12 @@
+using System.Collections.Concurrent;
+using LockMyLaptop.SharedContracts;
+
 namespace LockMyLaptop.CommandService.Services;
 
 public sealed class InMemoryStateStore
 {
     private readonly object _sync = new();
+    private readonly ConcurrentDictionary<Guid, TaskCompletionSource<CommandResultMessage>> _pendingCommands = new();
 
     public string? ActiveLaptopId { get; set; }
     public string? ActivePairToken { get; set; }
@@ -11,6 +15,7 @@ public sealed class InMemoryStateStore
     public DateTimeOffset? PairingCodeExpiryUtc { get; set; }
     public int FailedCodeAttempts { get; set; }
     public DateTimeOffset? PairingCooldownUntilUtc { get; set; }
+    public string? LaptopConnectionId { get; set; }
 
     public TResult Read<TResult>(Func<InMemoryStateStore, TResult> selector)
     {
@@ -25,6 +30,29 @@ public sealed class InMemoryStateStore
         lock (_sync)
         {
             mutator(this);
+        }
+    }
+
+    public Task<CommandResultMessage> CreatePendingCommand(Guid commandId)
+    {
+        var tcs = new TaskCompletionSource<CommandResultMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _pendingCommands[commandId] = tcs;
+        return tcs.Task;
+    }
+
+    public void CompletePendingCommand(CommandResultMessage result)
+    {
+        if (_pendingCommands.TryRemove(result.CommandId, out var tcs))
+        {
+            tcs.TrySetResult(result);
+        }
+    }
+
+    public void CancelPendingCommand(Guid commandId)
+    {
+        if (_pendingCommands.TryRemove(commandId, out var tcs))
+        {
+            tcs.TrySetCanceled();
         }
     }
 }

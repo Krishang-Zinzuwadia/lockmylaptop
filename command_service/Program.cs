@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using LockMyLaptop.CommandService.Hubs;
 using LockMyLaptop.CommandService.Services;
 using LockMyLaptop.SharedContracts;
+using Microsoft.AspNetCore.SignalR;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -97,6 +98,88 @@ app.MapPost("/api/pair/confirm", (PairRequest request, InMemoryStateStore store)
 	};
 });
 
+app.MapPost("/api/commands/lock", (PowerCommandRequest request, InMemoryStateStore store, IHubContext<AgentHub> hub, CancellationToken cancellationToken) =>
+	DispatchPowerCommand(request, CommandType.LockWorkstation, store, hub, cancellationToken));
+
+app.MapPost("/api/commands/sleep", (PowerCommandRequest request, InMemoryStateStore store, IHubContext<AgentHub> hub, CancellationToken cancellationToken) =>
+	DispatchPowerCommand(request, CommandType.Sleep, store, hub, cancellationToken));
+
 app.MapHub<AgentHub>("/hubs/agent");
 
 app.Run();
+
+static async Task<IResult> DispatchPowerCommand(
+	PowerCommandRequest request,
+	CommandType commandType,
+	InMemoryStateStore store,
+	IHubContext<AgentHub> hub,
+	CancellationToken cancellationToken)
+{
+	if (string.IsNullOrWhiteSpace(request.PairToken))
+	{
+		return Results.BadRequest(new { error = "pair_token_required" });
+	}
+
+	var now = DateTimeOffset.UtcNow;
+	var state = store.Read(s =>
+	{
+		if (string.IsNullOrWhiteSpace(s.ActivePairToken) ||
+			!string.Equals(request.PairToken, s.ActivePairToken, StringComparison.Ordinal) ||
+			!s.PairExpiryUtc.HasValue ||
+			now > s.PairExpiryUtc.Value)
+		{
+			return (ok: false, error: "invalid_or_expired_pair", laptopId: (string?)null, connectionId: (string?)null);
+		}
+
+		if (string.IsNullOrWhiteSpace(s.LaptopConnectionId) || string.IsNullOrWhiteSpace(s.ActiveLaptopId))
+		{
+			return (ok: false, error: "laptop_offline", laptopId: (string?)null, connectionId: (string?)null);
+		}
+
+		return (ok: true, error: (string?)null, laptopId: s.ActiveLaptopId, connectionId: s.LaptopConnectionId);
+	});
+
+	if (!state.ok)
+	{
+		return state.error == "laptop_offline"
+			? Results.BadRequest(new { error = "laptop_offline" })
+			: Results.Unauthorized();
+	}
+
+	var commandId = Guid.NewGuid();
+	var responseTask = store.CreatePendingCommand(commandId);
+	var envelope = new DispatchCommandMessage(
+		commandId,
+		state.laptopId!,
+		commandType,
+		now,
+		now.AddSeconds(20));
+
+	try
+	{
+		await hub.Clients.Client(state.connectionId!).SendAsync("DispatchCommand", envelope, cancellationToken);
+	}
+	catch
+	{
+		store.CancelPendingCommand(commandId);
+		return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+	}
+
+	var completed = await Task.WhenAny(responseTask, Task.Delay(TimeSpan.FromSeconds(20), cancellationToken));
+	if (completed != responseTask)
+	{
+		store.CancelPendingCommand(commandId);
+		return Results.StatusCode(StatusCodes.Status504GatewayTimeout);
+	}
+
+	var result = await responseTask;
+	if (result.Success)
+	{
+		return Results.Ok(new { commandId, state = "succeeded", commandType = commandType.ToString() });
+	}
+
+	return Results.Problem(
+		title: "command_failed",
+		detail: result.Error ?? "Unknown execution failure",
+		statusCode: StatusCodes.Status500InternalServerError);
+}

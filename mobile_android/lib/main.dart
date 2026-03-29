@@ -35,6 +35,56 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _pairToken;
   String? _laptopId;
 
+  Future<void> _sendLock() async {
+    if (_pairToken == null) {
+      return;
+    }
+
+    try {
+      await _api.lock(pairToken: _pairToken!);
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Laptop locked successfully')),
+      );
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Lock command failed')),
+      );
+    }
+  }
+
+  Future<void> _sendSleep() async {
+    if (_pairToken == null) {
+      return;
+    }
+
+    try {
+      await _api.sleep(pairToken: _pairToken!);
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Laptop sleep command sent')),
+      );
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Sleep command failed')),
+      );
+    }
+  }
+
   @override
   void dispose() {
     _codeController.dispose();
@@ -144,22 +194,14 @@ class _HomeScreenState extends State<HomeScreen> {
             width: 220,
             height: 220,
             child: ElevatedButton(
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Lock action coming in Phase 3')),
-                );
-              },
+              onPressed: _sendLock,
               style: ElevatedButton.styleFrom(shape: const CircleBorder()),
               child: const Icon(Icons.power_settings_new, size: 72),
             ),
           ),
           const SizedBox(height: 24),
           ElevatedButton.icon(
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Sleep action coming in Phase 3')),
-              );
-            },
+            onPressed: _sendSleep,
             icon: const Icon(Icons.hotel),
             label: const Text('Sleep Laptop'),
           ),

@@ -7,11 +7,13 @@ public sealed class PowerController
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool LockWorkStation();
 
+    [DllImport("PowrProf.dll", SetLastError = true)]
+    private static extern bool SetSuspendState(bool hibernate, bool forceCritical, bool disableWakeEvent);
+
     public bool Lock() => LockWorkStation();
 
     public bool Sleep()
     {
-        // Phase 1 placeholder. Phase 3 implements real sleep behavior.
-        return true;
+        return SetSuspendState(false, true, true);
     }
 }

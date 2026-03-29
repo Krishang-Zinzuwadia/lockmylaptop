@@ -45,4 +45,28 @@ class AppApi {
     final payload = jsonDecode(response.body) as Map<String, dynamic>;
     return PairResponse.fromJson(payload);
   }
+
+  Future<void> lock({required String pairToken}) async {
+    await _sendPowerCommand(endpoint: '/api/commands/lock', pairToken: pairToken);
+  }
+
+  Future<void> sleep({required String pairToken}) async {
+    await _sendPowerCommand(endpoint: '/api/commands/sleep', pairToken: pairToken);
+  }
+
+  Future<void> _sendPowerCommand({
+    required String endpoint,
+    required String pairToken,
+  }) async {
+    final uri = Uri.parse('$_baseUrl$endpoint');
+    final response = await _client.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'pairToken': pairToken}),
+    );
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception('Power command failed: ${response.body}');
+    }
+  }
 }
