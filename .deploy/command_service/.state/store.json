@@ -1,0 +1,12 @@
+{
+  "ActiveLaptopId": "laptop-local-001",
+  "ActiveMobileDeviceId": "android-local-001",
+  "ActivePairTokenHash": "E4210B8681CA7AA7B28AADE039552977DB2CBA28112C60B0F84F3B2C1147A2E4",
+  "PairExpiryUtc": "2026-04-28T22:21:39.5766624+00:00",
+  "CurrentPairingCodePlain": "8513",
+  "CurrentPairingCodeHash": "9E17D9AEF211177D5E7E441CB122892D0F49377D8CD8BE353443E915BB016A5B",
+  "PairingCodeExpiryUtc": "2026-03-29T22:24:36.2433587+00:00",
+  "FailedCodeAttempts": 0,
+  "PairingCooldownUntilUtc": null,
+  "LastCommandAtUtc": "2026-03-29T22:24:01.1401539+00:00"
+}

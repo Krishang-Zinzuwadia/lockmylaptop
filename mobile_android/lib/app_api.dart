@@ -19,10 +19,19 @@ class PairResponse {
 class AppApi {
   AppApi({http.Client? client, String? baseUrl})
       : _client = client ?? http.Client(),
-        _baseUrl = baseUrl ?? 'http://10.0.2.2:5000';
+        _baseUrl = baseUrl ?? 'http://127.0.0.1:5000';
 
   final http.Client _client;
-  final String _baseUrl;
+  String _baseUrl;
+
+  String get baseUrl => _baseUrl;
+
+  void setBaseUrl(String baseUrl) {
+    final normalized = baseUrl.trim();
+    if (normalized.isNotEmpty) {
+      _baseUrl = normalized;
+    }
+  }
 
   Future<PairResponse> pair({
     required String pairingCode,
@@ -52,6 +61,10 @@ class AppApi {
 
   Future<void> sleep({required String pairToken}) async {
     await _sendPowerCommand(endpoint: '/api/commands/sleep', pairToken: pairToken);
+  }
+
+  Future<void> shutdown({required String pairToken}) async {
+    await _sendPowerCommand(endpoint: '/api/commands/shutdown', pairToken: pairToken);
   }
 
   Future<void> unpair({required String pairToken}) async {

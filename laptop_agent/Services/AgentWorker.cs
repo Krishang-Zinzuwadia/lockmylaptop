@@ -34,6 +34,7 @@ public sealed class AgentWorker(
                 {
                     CommandType.LockWorkstation => powerController.Lock(),
                     CommandType.Sleep => powerController.Sleep(),
+                    CommandType.Shutdown => powerController.Shutdown(),
                     _ => false
                 };
 
