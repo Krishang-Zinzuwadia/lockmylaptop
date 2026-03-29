@@ -1,5 +1,6 @@
 param(
-    [switch]$Silent
+    [switch]$Silent,
+    [switch]$UseStartupTasks
 )
 
 $ErrorActionPreference = 'Stop'
@@ -14,6 +15,8 @@ function Write-Log {
 $root = Split-Path -Parent $PSScriptRoot
 $commandExe = Join-Path $root '.deploy\command_service\LockMyLaptop.CommandService.exe'
 $agentExe = Join-Path $root '.deploy\laptop_agent\LockMyLaptop.LaptopAgent.exe'
+$commandDir = Split-Path -Parent $commandExe
+$agentDir = Split-Path -Parent $agentExe
 
 if (-not (Test-Path $commandExe) -or -not (Test-Path $agentExe)) {
     throw 'Publish artifacts missing. Run scripts\publish.ps1 first.'
@@ -37,40 +40,45 @@ if ($null -ne $commandService -or $null -ne $agentService) {
     return
 }
 
-$commandTaskName = 'LockMyLaptop.CommandService.Startup'
-$agentTaskName = 'LockMyLaptop.LaptopAgent.Startup'
-
-$commandTask = Get-ScheduledTask -TaskName $commandTaskName -ErrorAction SilentlyContinue
-$agentTask = Get-ScheduledTask -TaskName $agentTaskName -ErrorAction SilentlyContinue
-if ($null -ne $commandTask -or $null -ne $agentTask) {
-    if ($null -ne $commandTask) {
-        Start-ScheduledTask -TaskName $commandTaskName -ErrorAction SilentlyContinue
-    }
-
-    if ($null -ne $agentTask) {
-        Start-ScheduledTask -TaskName $agentTaskName -ErrorAction SilentlyContinue
-    }
-
-    Write-Log 'Started runtime via scheduled startup tasks.'
-    return
-}
-
 $started = @()
 $commandRunning = Get-Process -Name 'LockMyLaptop.CommandService' -ErrorAction SilentlyContinue
 if ($null -eq $commandRunning) {
-    $proc = Start-Process -FilePath $commandExe -ArgumentList @('--urls', 'http://0.0.0.0:5000') -WindowStyle Hidden -PassThru
+    $proc = Start-Process -FilePath $commandExe -ArgumentList @('--urls', 'http://0.0.0.0:5000') -WorkingDirectory $commandDir -WindowStyle Hidden -PassThru
     $started += "command service process PID $($proc.Id)"
 }
 
 $agentRunning = Get-Process -Name 'LockMyLaptop.LaptopAgent' -ErrorAction SilentlyContinue
 if ($null -eq $agentRunning) {
-    $proc = Start-Process -FilePath $agentExe -WindowStyle Hidden -PassThru
+    $proc = Start-Process -FilePath $agentExe -WorkingDirectory $agentDir -WindowStyle Hidden -PassThru
     $started += "laptop agent process PID $($proc.Id)"
+}
+
+if ($started.Count -gt 0) {
+    Write-Log ('Started background runtime: ' + ($started -join ', '))
+    return
+}
+
+if ($UseStartupTasks) {
+    $commandTaskName = 'LockMyLaptop.CommandService.Startup'
+    $agentTaskName = 'LockMyLaptop.LaptopAgent.Startup'
+
+    $commandTask = Get-ScheduledTask -TaskName $commandTaskName -ErrorAction SilentlyContinue
+    $agentTask = Get-ScheduledTask -TaskName $agentTaskName -ErrorAction SilentlyContinue
+
+    if ($null -ne $commandTask -or $null -ne $agentTask) {
+        if ($null -ne $commandTask) {
+            Start-ScheduledTask -TaskName $commandTaskName -ErrorAction SilentlyContinue
+        }
+
+        if ($null -ne $agentTask) {
+            Start-ScheduledTask -TaskName $agentTaskName -ErrorAction SilentlyContinue
+        }
+
+        Write-Log 'Started runtime via scheduled startup tasks.'
+        return
+    }
 }
 
 if ($started.Count -eq 0) {
     Write-Log 'Runtime already running in background.'
-}
-else {
-    Write-Log ('Started background runtime: ' + ($started -join ', '))
 }
