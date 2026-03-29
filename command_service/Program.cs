@@ -76,6 +76,7 @@ app.MapPost("/api/pair/confirm", (PairRequest request, InMemoryStateStore store)
 		var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
 		var pairedAt = DateTimeOffset.UtcNow;
 
+		s.ActiveMobileDeviceId = request.MobileDeviceId.Trim();
 		s.ActivePairToken = token;
 		s.PairExpiryUtc = pairedAt.AddDays(30);
 		s.FailedCodeAttempts = 0;
@@ -96,6 +97,35 @@ app.MapPost("/api/pair/confirm", (PairRequest request, InMemoryStateStore store)
 		"expired" => Results.BadRequest(new { error = "pairing_code_expired" }),
 		_ => Results.BadRequest(new { error = "invalid_pairing_code" })
 	};
+});
+
+app.MapPost("/api/pair/unpair", (UnpairRequest request, InMemoryStateStore store) =>
+{
+	if (string.IsNullOrWhiteSpace(request.PairToken))
+	{
+		return Results.BadRequest(new { error = "pair_token_required" });
+	}
+
+	var result = store.Read(s =>
+	{
+		if (string.IsNullOrWhiteSpace(s.ActivePairToken) ||
+			!string.Equals(s.ActivePairToken, request.PairToken, StringComparison.Ordinal))
+		{
+			return false;
+		}
+
+		s.ActivePairToken = null;
+		s.PairExpiryUtc = null;
+		s.ActiveMobileDeviceId = null;
+		return true;
+	});
+
+	if (!result)
+	{
+		return Results.Unauthorized();
+	}
+
+	return Results.Ok(new { status = "unpaired" });
 });
 
 app.MapPost("/api/commands/lock", (PowerCommandRequest request, InMemoryStateStore store, IHubContext<AgentHub> hub, CancellationToken cancellationToken) =>

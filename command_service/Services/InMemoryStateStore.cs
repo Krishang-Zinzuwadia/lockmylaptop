@@ -9,6 +9,7 @@ public sealed class InMemoryStateStore
     private readonly ConcurrentDictionary<Guid, TaskCompletionSource<CommandResultMessage>> _pendingCommands = new();
 
     public string? ActiveLaptopId { get; set; }
+    public string? ActiveMobileDeviceId { get; set; }
     public string? ActivePairToken { get; set; }
     public DateTimeOffset? PairExpiryUtc { get; set; }
     public string? CurrentPairingCode { get; set; }

@@ -35,6 +35,61 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _pairToken;
   String? _laptopId;
 
+  Future<void> _openSettings() async {
+    if (_pairToken == null) {
+      return;
+    }
+
+    final shouldUnpair = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Settings'),
+          content: const Text('Unpair this phone from the connected laptop?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Unpair'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldUnpair != true || _pairToken == null) {
+      return;
+    }
+
+    try {
+      await _api.unpair(pairToken: _pairToken!);
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _pairToken = null;
+        _laptopId = null;
+        _codeController.clear();
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Devices unpaired successfully')),
+      );
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unpair failed')),
+      );
+    }
+  }
+
   Future<void> _sendLock() async {
     if (_pairToken == null) {
       return;
@@ -218,7 +273,7 @@ class _HomeScreenState extends State<HomeScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.settings),
-            onPressed: _pairToken == null ? null : () {},
+            onPressed: _pairToken == null ? null : _openSettings,
           ),
         ],
       ),

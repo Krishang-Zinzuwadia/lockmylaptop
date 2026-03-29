@@ -54,6 +54,19 @@ class AppApi {
     await _sendPowerCommand(endpoint: '/api/commands/sleep', pairToken: pairToken);
   }
 
+  Future<void> unpair({required String pairToken}) async {
+    final uri = Uri.parse('$_baseUrl/api/pair/unpair');
+    final response = await _client.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'pairToken': pairToken}),
+    );
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception('Unpair failed: ${response.body}');
+    }
+  }
+
   Future<void> _sendPowerCommand({
     required String endpoint,
     required String pairToken,
