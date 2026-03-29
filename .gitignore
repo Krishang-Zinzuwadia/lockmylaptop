@@ -1,0 +1,23 @@
+# General
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+
+# Flutter / Dart
+.dart_tool/
+.packages
+.pub/
+build/
+
+# Android
+*.keystore
+local.properties
+
+# .NET
+bin/
+obj/
+.vs/
+
+# IDE
+.vscode/*.code-workspace
