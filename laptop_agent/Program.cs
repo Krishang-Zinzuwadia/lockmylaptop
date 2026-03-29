@@ -8,6 +8,8 @@ builder.Services.AddWindowsService(options =>
 });
 
 builder.Services.AddSingleton<PowerController>();
+builder.Services.AddHttpClient();
+builder.Services.Configure<AgentOptions>(builder.Configuration.GetSection(AgentOptions.SectionName));
 builder.Services.AddHostedService<AgentWorker>();
 
 var host = builder.Build();

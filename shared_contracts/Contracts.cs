@@ -19,6 +19,9 @@ public sealed record CommandResultMessage(
     string? Error,
     DateTimeOffset CompletedAt);
 
+public sealed record StartCodeRequest(string LaptopId);
+public sealed record StartCodeResponse(string PairingCode, DateTimeOffset ExpiresAt);
+
 public sealed record PairRequest(string PairingCode, string MobileDeviceId);
 public sealed record PairResponse(string PairToken, string LaptopId, DateTimeOffset PairedAt);
 public sealed record UnpairRequest(string PairToken);
