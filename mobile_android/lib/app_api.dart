@@ -71,11 +71,15 @@ class AppApi {
     required String endpoint,
     required String pairToken,
   }) async {
+    final idempotencyKey = DateTime.now().microsecondsSinceEpoch.toString();
     final uri = Uri.parse('$_baseUrl$endpoint');
     final response = await _client.post(
       uri,
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'pairToken': pairToken}),
+      body: jsonEncode({
+        'pairToken': pairToken,
+        'idempotencyKey': idempotencyKey,
+      }),
     );
 
     if (response.statusCode < 200 || response.statusCode >= 300) {

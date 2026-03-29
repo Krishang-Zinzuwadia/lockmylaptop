@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text;
 using LockMyLaptop.CommandService.Hubs;
 using LockMyLaptop.CommandService.Services;
 using LockMyLaptop.SharedContracts;
@@ -26,7 +27,7 @@ app.MapPost("/api/pair/start-code", (StartCodeRequest request, InMemoryStateStor
 	store.Write(s =>
 	{
 		s.ActiveLaptopId = request.LaptopId.Trim();
-		s.CurrentPairingCode = code;
+		s.CurrentPairingCodeHash = HashValue(code);
 		s.PairingCodeExpiryUtc = expiresAt;
 		s.FailedCodeAttempts = 0;
 		s.PairingCooldownUntilUtc = null;
@@ -48,6 +49,7 @@ app.MapPost("/api/pair/confirm", (PairRequest request, InMemoryStateStore store)
 	}
 
 	var now = DateTimeOffset.UtcNow;
+	var submittedCodeHash = HashValue(request.PairingCode);
 	var result = store.Read(s =>
 	{
 		if (s.PairingCooldownUntilUtc.HasValue && now < s.PairingCooldownUntilUtc.Value)
@@ -55,14 +57,14 @@ app.MapPost("/api/pair/confirm", (PairRequest request, InMemoryStateStore store)
 			return (ok: false, status: "cooldown", pair: (PairResponse?)null);
 		}
 
-		if (string.IsNullOrWhiteSpace(s.CurrentPairingCode) ||
+		if (string.IsNullOrWhiteSpace(s.CurrentPairingCodeHash) ||
 			!s.PairingCodeExpiryUtc.HasValue ||
 			now > s.PairingCodeExpiryUtc.Value)
 		{
 			return (ok: false, status: "expired", pair: (PairResponse?)null);
 		}
 
-		if (!string.Equals(request.PairingCode, s.CurrentPairingCode, StringComparison.Ordinal))
+		if (!string.Equals(submittedCodeHash, s.CurrentPairingCodeHash, StringComparison.Ordinal))
 		{
 			s.FailedCodeAttempts += 1;
 			if (s.FailedCodeAttempts >= 5)
@@ -77,7 +79,7 @@ app.MapPost("/api/pair/confirm", (PairRequest request, InMemoryStateStore store)
 		var pairedAt = DateTimeOffset.UtcNow;
 
 		s.ActiveMobileDeviceId = request.MobileDeviceId.Trim();
-		s.ActivePairToken = token;
+		s.ActivePairTokenHash = HashValue(token);
 		s.PairExpiryUtc = pairedAt.AddDays(30);
 		s.FailedCodeAttempts = 0;
 		s.PairingCooldownUntilUtc = null;
@@ -106,17 +108,20 @@ app.MapPost("/api/pair/unpair", (UnpairRequest request, InMemoryStateStore store
 		return Results.BadRequest(new { error = "pair_token_required" });
 	}
 
+	var submittedTokenHash = HashValue(request.PairToken);
 	var result = store.Read(s =>
 	{
-		if (string.IsNullOrWhiteSpace(s.ActivePairToken) ||
-			!string.Equals(s.ActivePairToken, request.PairToken, StringComparison.Ordinal))
+		if (string.IsNullOrWhiteSpace(s.ActivePairTokenHash) ||
+			!string.Equals(s.ActivePairTokenHash, submittedTokenHash, StringComparison.Ordinal))
 		{
 			return false;
 		}
 
-		s.ActivePairToken = null;
+		s.ActivePairTokenHash = null;
 		s.PairExpiryUtc = null;
 		s.ActiveMobileDeviceId = null;
+		s.LastCommandAtUtc = null;
+		s.IdempotencyCache.Clear();
 		return true;
 	});
 
@@ -151,26 +156,61 @@ static async Task<IResult> DispatchPowerCommand(
 	}
 
 	var now = DateTimeOffset.UtcNow;
+	var submittedTokenHash = HashValue(request.PairToken);
+	var idempotencyKey = string.IsNullOrWhiteSpace(request.IdempotencyKey)
+		? null
+		: request.IdempotencyKey.Trim();
+
 	var state = store.Read(s =>
 	{
-		if (string.IsNullOrWhiteSpace(s.ActivePairToken) ||
-			!string.Equals(request.PairToken, s.ActivePairToken, StringComparison.Ordinal) ||
+		s.CleanupIdempotencyCache(now, TimeSpan.FromMinutes(5));
+
+		if (string.IsNullOrWhiteSpace(s.ActivePairTokenHash) ||
+			!string.Equals(submittedTokenHash, s.ActivePairTokenHash, StringComparison.Ordinal) ||
 			!s.PairExpiryUtc.HasValue ||
 			now > s.PairExpiryUtc.Value)
 		{
-			return (ok: false, error: "invalid_or_expired_pair", laptopId: (string?)null, connectionId: (string?)null);
+			return (ok: false, error: "invalid_or_expired_pair", laptopId: (string?)null, connectionId: (string?)null, cached: (CommandCacheEntry?)null);
+		}
+
+		if (s.LastCommandAtUtc.HasValue && now - s.LastCommandAtUtc.Value < TimeSpan.FromMilliseconds(400))
+		{
+			return (ok: false, error: "rate_limited", laptopId: (string?)null, connectionId: (string?)null, cached: (CommandCacheEntry?)null);
+		}
+
+		if (idempotencyKey is not null && s.IdempotencyCache.TryGetValue(idempotencyKey, out var cached))
+		{
+			return (ok: false, error: "idempotent_replay", laptopId: (string?)null, connectionId: (string?)null, cached);
 		}
 
 		if (string.IsNullOrWhiteSpace(s.LaptopConnectionId) || string.IsNullOrWhiteSpace(s.ActiveLaptopId))
 		{
-			return (ok: false, error: "laptop_offline", laptopId: (string?)null, connectionId: (string?)null);
+			return (ok: false, error: "laptop_offline", laptopId: (string?)null, connectionId: (string?)null, cached: (CommandCacheEntry?)null);
 		}
 
-		return (ok: true, error: (string?)null, laptopId: s.ActiveLaptopId, connectionId: s.LaptopConnectionId);
+		s.LastCommandAtUtc = now;
+
+		return (ok: true, error: (string?)null, laptopId: s.ActiveLaptopId, connectionId: s.LaptopConnectionId, cached: (CommandCacheEntry?)null);
 	});
+
+	if (state.error == "idempotent_replay" && state.cached is not null)
+	{
+		return Results.Ok(new
+		{
+			commandId = state.cached.CommandId,
+			state = state.cached.State,
+			commandType = commandType.ToString(),
+			idempotentReplay = true
+		});
+	}
 
 	if (!state.ok)
 	{
+		if (state.error == "rate_limited")
+		{
+			return Results.StatusCode(StatusCodes.Status429TooManyRequests);
+		}
+
 		return state.error == "laptop_offline"
 			? Results.BadRequest(new { error = "laptop_offline" })
 			: Results.Unauthorized();
@@ -199,17 +239,37 @@ static async Task<IResult> DispatchPowerCommand(
 	if (completed != responseTask)
 	{
 		store.CancelPendingCommand(commandId);
+		if (idempotencyKey is not null)
+		{
+			store.Write(s => s.IdempotencyCache[idempotencyKey] = new CommandCacheEntry(commandId, "timeout", DateTimeOffset.UtcNow));
+		}
 		return Results.StatusCode(StatusCodes.Status504GatewayTimeout);
 	}
 
 	var result = await responseTask;
 	if (result.Success)
 	{
+		if (idempotencyKey is not null)
+		{
+			store.Write(s => s.IdempotencyCache[idempotencyKey] = new CommandCacheEntry(commandId, "succeeded", DateTimeOffset.UtcNow));
+		}
+
 		return Results.Ok(new { commandId, state = "succeeded", commandType = commandType.ToString() });
+	}
+
+	if (idempotencyKey is not null)
+	{
+		store.Write(s => s.IdempotencyCache[idempotencyKey] = new CommandCacheEntry(commandId, "failed", DateTimeOffset.UtcNow));
 	}
 
 	return Results.Problem(
 		title: "command_failed",
 		detail: result.Error ?? "Unknown execution failure",
 		statusCode: StatusCodes.Status500InternalServerError);
+}
+
+static string HashValue(string value)
+{
+	var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(value));
+	return Convert.ToHexString(bytes);
 }

@@ -3,6 +3,8 @@ using LockMyLaptop.SharedContracts;
 
 namespace LockMyLaptop.CommandService.Services;
 
+public sealed record CommandCacheEntry(Guid CommandId, string State, DateTimeOffset CreatedAt);
+
 public sealed class InMemoryStateStore
 {
     private readonly object _sync = new();
@@ -10,13 +12,15 @@ public sealed class InMemoryStateStore
 
     public string? ActiveLaptopId { get; set; }
     public string? ActiveMobileDeviceId { get; set; }
-    public string? ActivePairToken { get; set; }
+    public string? ActivePairTokenHash { get; set; }
     public DateTimeOffset? PairExpiryUtc { get; set; }
-    public string? CurrentPairingCode { get; set; }
+    public string? CurrentPairingCodeHash { get; set; }
     public DateTimeOffset? PairingCodeExpiryUtc { get; set; }
     public int FailedCodeAttempts { get; set; }
     public DateTimeOffset? PairingCooldownUntilUtc { get; set; }
     public string? LaptopConnectionId { get; set; }
+    public DateTimeOffset? LastCommandAtUtc { get; set; }
+    public Dictionary<string, CommandCacheEntry> IdempotencyCache { get; } = new(StringComparer.Ordinal);
 
     public TResult Read<TResult>(Func<InMemoryStateStore, TResult> selector)
     {
@@ -54,6 +58,19 @@ public sealed class InMemoryStateStore
         if (_pendingCommands.TryRemove(commandId, out var tcs))
         {
             tcs.TrySetCanceled();
+        }
+    }
+
+    public void CleanupIdempotencyCache(DateTimeOffset nowUtc, TimeSpan maxAge)
+    {
+        var toRemove = IdempotencyCache
+            .Where(x => nowUtc - x.Value.CreatedAt > maxAge)
+            .Select(x => x.Key)
+            .ToArray();
+
+        foreach (var key in toRemove)
+        {
+            IdempotencyCache.Remove(key);
         }
     }
 }

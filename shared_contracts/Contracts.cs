@@ -25,4 +25,4 @@ public sealed record StartCodeResponse(string PairingCode, DateTimeOffset Expire
 public sealed record PairRequest(string PairingCode, string MobileDeviceId);
 public sealed record PairResponse(string PairToken, string LaptopId, DateTimeOffset PairedAt);
 public sealed record UnpairRequest(string PairToken);
-public sealed record PowerCommandRequest(string PairToken);
+public sealed record PowerCommandRequest(string PairToken, string? IdempotencyKey = null);
