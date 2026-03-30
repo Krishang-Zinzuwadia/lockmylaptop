@@ -15,8 +15,24 @@ public sealed class InMemoryStateStore
 
     public InMemoryStateStore(IHostEnvironment hostEnvironment)
     {
-        _stateFilePath = Path.Combine(hostEnvironment.ContentRootPath, ".state", "store.json");
-        LoadState();
+        var appDataRoot = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        _stateFilePath = Path.Combine(appDataRoot, "LockMyLaptop", "command_service", "store.json");
+
+        var legacyStatePaths = GetLegacyStatePaths(hostEnvironment)
+            .Where(path => !string.Equals(path, _stateFilePath, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
+        if (!File.Exists(_stateFilePath))
+        {
+            var migrated = TryLoadFromCandidates(legacyStatePaths);
+            if (migrated)
+            {
+                SaveStateNoThrow();
+                return;
+            }
+        }
+
+        LoadStateFromPath(_stateFilePath);
     }
 
     public string? ActiveLaptopId { get; set; }
@@ -113,20 +129,38 @@ public sealed class InMemoryStateStore
         }
     }
 
-    private void LoadState()
+    private bool TryLoadFromCandidates(IEnumerable<string> candidatePaths)
+    {
+        foreach (var candidate in candidatePaths)
+        {
+            if (!File.Exists(candidate))
+            {
+                continue;
+            }
+
+            if (LoadStateFromPath(candidate))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private bool LoadStateFromPath(string path)
     {
         try
         {
-            if (!File.Exists(_stateFilePath))
+            if (!File.Exists(path))
             {
-                return;
+                return false;
             }
 
-            var json = File.ReadAllText(_stateFilePath);
+            var json = File.ReadAllText(path);
             var snapshot = JsonSerializer.Deserialize<PersistentSnapshot>(json);
             if (snapshot is null)
             {
-                return;
+                return false;
             }
 
             ActiveLaptopId = snapshot.ActiveLaptopId;
@@ -139,11 +173,19 @@ public sealed class InMemoryStateStore
             FailedCodeAttempts = snapshot.FailedCodeAttempts;
             PairingCooldownUntilUtc = snapshot.PairingCooldownUntilUtc;
             LastCommandAtUtc = snapshot.LastCommandAtUtc;
+            return true;
         }
         catch
         {
             // Ignore state load errors and start fresh.
+            return false;
         }
+    }
+
+    private static IEnumerable<string> GetLegacyStatePaths(IHostEnvironment hostEnvironment)
+    {
+        yield return Path.Combine(hostEnvironment.ContentRootPath, ".state", "store.json");
+        yield return Path.Combine(AppContext.BaseDirectory, ".state", "store.json");
     }
 
     private sealed class PersistentSnapshot

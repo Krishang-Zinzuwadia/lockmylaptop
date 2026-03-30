@@ -191,35 +191,37 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
+    var remoteUnpairSucceeded = true;
     try {
       await _api.unpair(pairToken: _pairToken!);
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        _pairToken = null;
-        _laptopId = null;
-        _codeController.clear();
-      });
-
-      await _clearSession();
-      if (!mounted) {
-        return;
-      }
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Devices unpaired successfully')),
-      );
     } catch (_) {
-      if (!mounted) {
-        return;
-      }
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Unpair failed')),
-      );
+      remoteUnpairSucceeded = false;
     }
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _pairToken = null;
+      _laptopId = null;
+      _codeController.clear();
+    });
+
+    await _clearSession();
+    if (!mounted) {
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          remoteUnpairSucceeded
+              ? 'Devices unpaired successfully'
+              : 'Unpaired locally. Server revoke will retry on next pair.',
+        ),
+      ),
+    );
   }
 
   Future<void> _sendLock() async {

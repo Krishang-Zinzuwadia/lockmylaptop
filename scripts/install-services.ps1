@@ -2,7 +2,19 @@ $ErrorActionPreference = 'Stop'
 
 $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $isAdmin) {
-    throw 'Run this script in an Administrator PowerShell window.'
+    $scriptPath = $MyInvocation.MyCommand.Path
+    if ([string]::IsNullOrWhiteSpace($scriptPath)) {
+        throw 'Unable to auto-elevate: script path unavailable. Run this script in an Administrator PowerShell window.'
+    }
+
+    Start-Process -FilePath 'powershell.exe' -Verb RunAs -ArgumentList @(
+        '-NoProfile',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        $scriptPath
+    ) -Wait
+    exit $LASTEXITCODE
 }
 
 $root = Split-Path -Parent $PSScriptRoot
