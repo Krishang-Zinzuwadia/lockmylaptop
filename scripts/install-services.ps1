@@ -50,7 +50,7 @@ if (-not (Test-Path $commandExe) -or -not (Test-Path $agentExe)) {
 $commandSvc = 'LockMyLaptop.CommandService'
 $agentSvc = 'LockMyLaptop.LaptopAgent'
 
-$commandBinPath = '"' + $commandExe + '" --urls http://0.0.0.0:5000'
+$commandBinPath = '"\"' + $commandExe + '\" --urls http://0.0.0.0:5000"'
 $agentBinPath = '"' + $agentExe + '"'
 
 Invoke-Sc -Arguments @('stop', $commandSvc) -AllowFailure | Out-Null
